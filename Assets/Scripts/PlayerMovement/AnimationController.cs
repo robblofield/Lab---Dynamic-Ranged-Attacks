@@ -34,6 +34,16 @@ public class AnimationController : MonoBehaviour
         {
             animator.SetBool("isSprinting", false);
         }
+
+        // Check for aiming
+        if (Input.GetMouseButton(0))
+        {
+            animator.SetBool("isAiming", true);
+        }
+        else
+        {
+            animator.SetBool("isAiming", false);
+        }
         
     }
 }

@@ -3,88 +3,103 @@ using UnityEngine;
 public class BowController : MonoBehaviour
 {
     public GameObject arrowPrefab;
-    public TrajectoryVisualizer trajectoryVisualizer;
     public Transform arrowSpawnPoint;
+    public GameObject bowEquiped;
 
-    private float currentPullback = 0f; // Current pullback distance
+    private float launchSpeed = 50f;
 
-    public float minPullback = 0.5f; // Minimum pullback distance
-    public float maxPullback = 3f; // Maximum pullback distance
-    public float maxDrawbackTime = 2f; // Maximum drawback time
-    public float maxProjectileSpeed = 20f; // Maximum projectile speed
-    public float maxDamageMultiplier = 3f; // Maximum damage multiplier
-
+    // Variables for pullback and bow properties
+    private float currentPullback = 0f;
     private bool isPulling = false;
     private float drawbackStartTime;
 
-    private void Update()
+    private float activeMultiplier = 1;
+    private float activePullbackTime = 3;
+    private float pullbackPercentage;
+
+    private GameObject instantiatedArrow;
+    private Vector3 arrowDirection = Vector3.forward;
+    
+
+
+
+private void Update()
     {
-        if (Input.GetMouseButtonDown(0)) // Left mouse button
+        if (isPulling)
         {
-            StartPulling(); // Call StartPulling when shooting action is initiated
+            UpdatePull();
+            UpdateArrowDirection();
         }
-        else if (Input.GetMouseButtonUp(0))
+
+        // Check for mouse button input
+        if (Input.GetMouseButtonDown(0))
+        {
+            StartPulling();
+        }
+        else if (Input.GetMouseButtonUp(0) && isPulling)
         {
             ReleaseArrow();
         }
-
-        if (isPulling)
-        {
-            PullBow();
-            UpdatePull();
-        }
     }
 
-    public void StartPulling()
+    private void StartPulling()
     {
+        // Bool to enable/disable logic when pulling back the bow
         isPulling = true;
+        // Timestamp from when we started pulling
         drawbackStartTime = Time.time;
+
+        // Instantiate the arrow when pulling starts
+        instantiatedArrow = Instantiate(arrowPrefab, arrowSpawnPoint.position, Quaternion.identity);
     }
 
-    void UpdatePull()
+    private void UpdatePull() // Update the status of the bow pull
     {
-        // Calculate pullback distance continuously while pulling
+        // How long have we been pulling? current time - the time stamp from when we started pulling
         float drawbackTime = Time.time - drawbackStartTime;
-        currentPullback = Mathf.Clamp(drawbackTime, 0f, maxDrawbackTime) / maxDrawbackTime * (maxPullback - minPullback) + minPullback;
-
-        // Calculate arrow direction based on camera rotation
-        Vector3 cameraForward = Camera.main.transform.forward;
-        Vector3 cameraRight = Camera.main.transform.right;
-        Vector3 arrowDirection = Vector3.RotateTowards(cameraForward, cameraRight, currentPullback, 0f); // Rotate camera forward towards right by currentPullback amount
-
-        Debug.Log("Arrow Direction: " + arrowDirection);
-
+        // Clamp the pullback calculation to the max pullback time (activePullbackTime)
+        currentPullback = Mathf.Clamp(drawbackTime, float.Epsilon, activePullbackTime);
+        Debug.Log("currentPullback =" +  currentPullback);
+        // Figure out what percentage of pullback we are currently at
+        pullbackPercentage = Mathf.Clamp((currentPullback / activePullbackTime) * 100, float.Epsilon, 100);
+        Debug.Log("pullbackPercentage =" + pullbackPercentage);
     }
 
+    private void UpdateArrowDirection()
+    {
+        // Calculate the end point of the ray
+        Vector3 rayEnd = arrowSpawnPoint.position + Camera.main.transform.forward * 10f;
+
+        // Calculate the direction from the arrow spawn point to the end point of the ray
+        arrowDirection = (rayEnd - arrowSpawnPoint.position).normalized;
+        Debug.Log("While Updating arrowDirection is" + arrowDirection);
+
+        // Debug draw the ray from the arrow spawn point to the end point
+        Debug.DrawRay(arrowSpawnPoint.position, arrowDirection * 10f, Color.green);
+
+
+        // Rotate arrow to face the calculated direction
+        instantiatedArrow.transform.rotation = Quaternion.LookRotation(arrowDirection);
+
+    }
 
     public void ReleaseArrow()
     {
         isPulling = false;
 
-        // Calculate projectile speed and damage multiplier based on pullback
-        float projectileSpeed = currentPullback / maxPullback * maxProjectileSpeed;
-        float damageMultiplier = currentPullback / maxPullback * maxDamageMultiplier;
-
-        // Spawn arrow and set its properties
-        Vector3 arrowDirection = Camera.main.transform.forward * currentPullback;
-        GameObject arrow = Instantiate(arrowPrefab, arrowSpawnPoint.position, Quaternion.LookRotation(arrowDirection));
-        Rigidbody arrowRigidbody = arrow.GetComponent<Rigidbody>();
+        // Ad an RB to the arrow and enable gravity for the arrow
+        Rigidbody arrowRigidbody = instantiatedArrow.AddComponent<Rigidbody>();
+        arrowRigidbody.useGravity = true;
         
-        arrowRigidbody.velocity = arrowDirection * projectileSpeed;
+        // Add force. Remap pullback% to 0 to 1, launchspd * pullback %, arrowDir * result
+        arrowRigidbody.AddForce(arrowDirection * (launchSpeed * (pullbackPercentage / 100)), ForceMode.Impulse);
+      
+        // Send damage values to instantiated arrow via ArrowScript
+        ArrowScript arrowScript = instantiatedArrow.GetComponent<ArrowScript>();
+        float baseDamage = 1f; // Base damage of the arrow
+        float totalDamage = baseDamage * activeMultiplier * pullbackPercentage;
+        arrowScript.SetDamage(totalDamage);
 
-        ArrowScript arrowScript = arrow.GetComponent<ArrowScript>();
-        arrowScript.SetDamageMultiplier(damageMultiplier);
-
-        Destroy(arrow, 5f); // Destroy arrow after 5 seconds
-
-       
-    }
-
-    private void PullBow()
-    {
-        // Implement pulling back the bow
-        // This could involve animating the bowstring or adjusting its position
-        currentPullback += Time.deltaTime;
-        currentPullback = Mathf.Clamp(currentPullback, 0f, maxPullback);
+        instantiatedArrow = null; // Reset instantiatedArrow reference
     }
 }
